@@ -2,7 +2,7 @@ import Dependencies._
 
 name := "forex"
 version := "1.0.1"
-
+//fork := true
 scalaVersion := "2.13.12"
 scalacOptions ++= Seq(
   "-deprecation", // Emit warning and location for usages of deprecated APIs.
@@ -56,6 +56,7 @@ libraryDependencies ++= Seq(
   Libraries.fs2,
   Libraries.http4sDsl,
   Libraries.http4sServer,
+  Libraries.http4sClient,
   Libraries.http4sCirce,
   Libraries.circeCore,
   Libraries.circeGeneric,

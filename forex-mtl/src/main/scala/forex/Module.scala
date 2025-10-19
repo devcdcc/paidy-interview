@@ -1,37 +1,39 @@
 package forex
 
-import cats.effect.{ Concurrent, Timer }
-import forex.config.ApplicationConfig
+import cats.effect.{ConcurrentEffect, Resource, Timer }
 import forex.http.rates.RatesHttpRoutes
-import forex.services._
 import forex.programs._
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.server.middleware.{ AutoSlash, Timeout }
 
-class Module[F[_]: Concurrent: Timer](config: ApplicationConfig) {
+import forex.config.ApplicationConfig
+import forex.services.rates.Interpreters
+import org.http4s.blaze.client.BlazeClientBuilder
+import org.http4s.client.Client
 
-  private val ratesService: RatesService[F] = RatesServices.dummy[F]
+class Module[F[_]: ConcurrentEffect: Timer](config: ApplicationConfig) {
 
-  private val ratesProgram: RatesProgram[F] = RatesProgram[F](ratesService)
+  private val ec = scala.concurrent.ExecutionContext.global
 
-  private val ratesHttpRoutes: HttpRoutes[F] = new RatesHttpRoutes[F](ratesProgram).routes
+  private val httpClient: Resource[F, Client[F]] =
+    BlazeClientBuilder[F](ec)
+      .withRequestTimeout(config.oneFrame.timeout)
+      .resource
 
   type PartialMiddleware = HttpRoutes[F] => HttpRoutes[F]
   type TotalMiddleware   = HttpApp[F] => HttpApp[F]
 
-  private val routesMiddleware: PartialMiddleware = {
-    { http: HttpRoutes[F] =>
-      AutoSlash(http)
-    }
-  }
+  private val routesMiddleware: PartialMiddleware = http => AutoSlash(http)
+  private val appMiddleware: TotalMiddleware      = http => Timeout(config.http.timeout)(http)
 
-  private val appMiddleware: TotalMiddleware = { http: HttpApp[F] =>
-    Timeout(config.http.timeout)(http)
-  }
-
-  private val http: HttpRoutes[F] = ratesHttpRoutes
-
-  val httpApp: HttpApp[F] = appMiddleware(routesMiddleware(http).orNotFound)
+  val httpAppResource: Resource[F, HttpApp[F]] =
+    for {
+      client <- httpClient
+      ratesSvc <- Resource.eval(Interpreters.live[F](client, config))
+      ratesProg = RatesProgram[F](ratesSvc)
+      routes    = new RatesHttpRoutes[F](ratesProg).routes
+      httpApp   = appMiddleware(routesMiddleware(routes).orNotFound)
+    } yield httpApp
 
 }

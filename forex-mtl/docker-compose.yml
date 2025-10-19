@@ -1,0 +1,28 @@
+services:
+  one-frame:
+    image: paidyinc/one-frame
+    networks:
+      - default
+    ports:
+      - "8080:8080"
+
+  forex:
+    image: sbtscala/scala-sbt:eclipse-temurin-17.0.15_6_1.11.7_3.7.3
+    working_dir: /app
+    volumes:
+      - ./:/source:ro
+    command: >
+      sh -c "cp -r /source/* /app/ && env && sbt -v -J-XX:+UseG1GC -J-XX:MaxGCPauseMillis=100 -J-Xms1g -J-Xmx2g -J-XX:+AlwaysPreTouch -Dconfig.file=/app/conf/application.conf run"
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: [ "CMD", "curl", "http://localhost:8082/rates?from=USD&to=CAD"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
